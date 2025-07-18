@@ -123,13 +123,14 @@ def getSortedStreaks(users_streakDiffs, users_nicknames):
     print('Formatted message body')
     return message_body
 
-# Give the sorted streaks formatted for a message body, write the streaks to files in the format of f'{streak} {user_id}'
-def writeStreaksToFile(messageBody):
+# Provided a map, write the streaks to files in the format of f'{streak} {user_id}'
+def writeStreaksToFile(users_streakDiffs):
+    fileContent = []
+    for user_id, streak in users_streakDiffs.items():
+        fileContent.append(f'{streak} {user_id}')
+    
     with open(STREAKS_FILENAME, 'w') as file:
-        for line in messageBody:
-            file.write(line)
-            if line != messageBody[-1]:
-                file.write('\n')
+        file.write('\n'.join(fileContent))
     print("Updated streaks file")
         
 # Performs a post request for a given purpose
@@ -184,11 +185,11 @@ def main():
     # update streaks with the new checkins
     updateStreaks(data_streaks, users_streakDiffs)
     
+    # write the streaks to the file
+    writeStreaksToFile(users_streakDiffs)
+
     # get the streaks as a sorted list
     data_streaksSorted = getSortedStreaks(users_streakDiffs, users_nicknames)
-
-    # write the streaks to the file
-    writeStreaksToFile(data_streaksSorted)
 
     # Post the streak leaderboard to the groupme chat
     data_leaderboardJson = formatLeaderboard_inJson(data_streaksSorted)
