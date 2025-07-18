@@ -1,3 +1,5 @@
 .venv
 .env
-out.json
+.vscode
+/tests/examples
+__pycache__

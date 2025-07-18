@@ -29,47 +29,37 @@ _NOW = dt.now(_TIMEZONE_EASTERN)
 _YESTERDAY = _NOW.date() - timedelta(days=1)
 START_OF_YESTERDAY = dt.combine(_YESTERDAY, time.min, _TIMEZONE_EASTERN)
 
-users_streakDiffs = dict() # user_id: -1 | 1
-users_nicknames = dict() # user_id: nickname
 
-# Get users
-def getUsers():
-    response = r.get(URL_USERS)
+# Performs a get request for a given purpose
+def r_get(url, purpose, json = None):
+    response = r.get(url, json=json)
 
     if not response.ok:
-        print('Failed getting users')
+        print(f'Failed getting {purpose}')
         raise response.raise_for_status()
     
-    data = response.json()
+    return response.json()
+
+# Parse users from JSON and store them in a map of {user_id: nickname}
+def getUsers(data, users_nicknames):
     members = data.get('response', {}).get('members', [])
 
     for member in members:
-        name = member.get('nickname')
         user_id = member.get('user_id')
-
-        users_streakDiffs[user_id] = -1
+        name = member.get('nickname')
         users_nicknames[user_id] = name
 
     print(f'Found {len(users_nicknames)} users: {users_nicknames}')
-    
 
-# Get checkins
-def getCheckins():
-    response = r.get(URL_CHECKINS, data = {
-        'since_id': dt.timestamp(START_OF_YESTERDAY) # gets most recent messages, max 100
-    })
-
-    if not response.ok:
-        print('Failed getting checkins')
-        raise response.raise_for_status()
-    
-    data = response.json()
+# Parse checkins from JSON and store 1 (that the user read) in users_streakDiffs accordingly
+def getCheckins(data, users_streakDiffs):
     messages = data.get('response', {}).get('messages', [])
     print(f'Found {len(messages)} messsages since {START_OF_YESTERDAY.date()}')
     messages = [msg for msg in messages if 'event' not in msg]
     print(f'Found {len(messages)} non-events since {START_OF_YESTERDAY.date()}')
 
-    for i in range(len(messages)):
+    i = 0
+    while i < len(messages):
         message = messages[i]
         try:
             text = message.get('text')
@@ -86,71 +76,84 @@ def getCheckins():
         if checkin_number == 1:
             print(f'Logged {i+1} checkins from messages')
             break
+        else:
+            i += 1
     
+    if i == len(messages):
+        users_streakDiffs.clear()
+        print('No one read today')
+    
+# Read content from a file and return the content as a list of strings
+def readFile():
+    try:
+        with open(STREAKS_FILENAME, 'r') as file:
+            return file.readlines()
+    except FileNotFoundError:
+        return []
 
-def updateStreaks():
-    # create the file if it doesn't exist
-    if not path.exists(STREAKS_FILENAME):
-        with open(STREAKS_FILENAME, 'w') as file:
-            pass
+# Given streaks from a file (in the format f'{streak} {user_id}\n'), update the streak map
+def updateStreaks(fileContent, users_streakDiffs):
+    # updates users_streakDiffs to be {user_id: streak, ...}
+    for line in fileContent:
+        line = line.strip()
+        streak, user_id = line.split()
+        streak = int(streak)
+        diff = users_streakDiffs[user_id]
 
-    with open(STREAKS_FILENAME, 'r+') as file:
-        lines = file.readlines()
-        # print(lines)
-        file.seek(0)
-        users_to_ignore = set()
+        # woah this is clean
+        if streak ^ diff >= 0: # same sign
+            streak += diff # streak increases/decreases in same direction
+        else:
+            streak = diff # streak switches to -1 or 1
+        users_streakDiffs[user_id] = streak
 
-        # update streak
-        for line in lines:
-            line = line.strip()
-            user_id, streak = line.split()
-            streak = int(streak)
-            diff = users_streakDiffs[user_id]
-
-            # woah this is clean
-            if streak ^ diff >= 0: # same sign
-                streak += diff # streak increases/decreases in same direction
-            else:
-                streak = diff # streak switches to -1 or 1
-            
-            file.write(f'{streak} {user_id}\n')
-            users_to_ignore.add(user_id)
-
-        for user_id, streak in users_streakDiffs.items():
-            if user_id not in users_to_ignore:
-                file.write(f'{streak} {user_id}\n')
-
-        print("Updated streaks file")
-        
-def printStreaks():
-    # read and sort streaks
-    message = [f'TAWG Streaks for {START_OF_YESTERDAY.date()}:']
+# Given a map of {user_id: streak} and {user_id: nickname}, return the TAWG message body as a list of strings
+def getSortedStreaks(users_streakDiffs, users_nicknames):    
+    message_body = []
     streak_heap = []
     heapq.heapify(streak_heap)
 
-    try:
-        with open(STREAKS_FILENAME, 'r') as file:
-            for line in file.readlines():
-                streak, user_id = line.strip().split()
-                streak = int(streak)
+    for user_id, streak in users_streakDiffs.items():
+        heapq.heappush(streak_heap, [-streak, users_nicknames[user_id]])
 
-                heapq.heappush(streak_heap, [-streak, users_nicknames[user_id]]) # min heap
-    except:
-        print('Could not open streak file after updating streaks')
-        raise(open)
-    
     while streak_heap:
-        streak, nickname = heapq.heappop(streak_heap)
-        message.append(f'{-streak} - {nickname}') # min heap
-    print('Prepared message to post')
+        streak_negative, nickname = heapq.heappop(streak_heap)
+        message_body.append(f'{-streak_negative} {nickname}')
+    
+    print('Formatted message body')
+    return message_body
 
-    # send message in chat
-    r.post(URL_MESSAGE, json={
+# Give the sorted streaks formatted for a message body, write the streaks to files in the format of f'{streak} {user_id}'
+def writeStreaksToFile(messageBody):
+    with open(STREAKS_FILENAME, 'w') as file:
+        for line in messageBody:
+            file.write(line)
+            if line != messageBody[-1]:
+                file.write('\n')
+    print("Updated streaks file")
+        
+# Performs a post request for a given purpose
+def r_post(url, purpose, json):
+    try:
+        response = r.post(url, json=json)
+
+        if not response.ok:
+            raise response.raise_for_status()
+    except:
+        print(f'Failed post request for {purpose}')
+        raise response.raise_for_status()
+
+    print(f'Post request complete for {purpose}')
+
+# Return post request JSON body for the streak leaderboard
+def formatLeaderboard_inJson(data_streaksSorted):
+    header = f'TAWG Streaks for {START_OF_YESTERDAY.date()}:'
+    messageContent = '\n'.join([header] + data_streaksSorted)
+    return {
         'message': {
             'source_guid': str(uuid.uuid1()), # generates a time-based guid
-            'text': '\n'.join(message)
-        }
-    })
+            'text': messageContent
+        }}
 
 # json.dump(response.json(), file, indent=4)
 # URL = 'https://api.groupme.com/v3/bots/post'
@@ -161,10 +164,35 @@ def printStreaks():
 # r.post('https://api.groupme.com/v3/bots/post', data=BODY)
 
 def main():
-    getUsers()
-    getCheckins()
-    updateStreaks()
-    printStreaks()
+    users_streakDiffs = dict() # user_id: -1 | 1
+    users_nicknames = dict() # user_id: nickname
+
+    # get users
+    data_users = r_get(URL_USERS, 'users')
+    getUsers(data_users, users_nicknames)
+
+    for user_id in users_nicknames.keys():
+        users_streakDiffs[user_id] = -1 # by default, people don't read
+
+    # get checkins
+    data_checkins = r_get(URL_CHECKINS, 'checkins', {'since_id': dt.timestamp(START_OF_YESTERDAY)}) # gets most recent messages, max 100
+    getCheckins(data_checkins, users_streakDiffs)
+
+    # read stored streaks data
+    data_streaks = readFile()
+
+    # update streaks with the new checkins
+    updateStreaks(data_streaks, users_streakDiffs)
+    
+    # get the streaks as a sorted list
+    data_streaksSorted = getSortedStreaks(users_streakDiffs, users_nicknames)
+
+    # write the streaks to the file
+    writeStreaksToFile(data_streaksSorted)
+
+    # Post the streak leaderboard to the groupme chat
+    data_leaderboardJson = formatLeaderboard_inJson(data_streaksSorted)
+    # r_post(URL_MESSAGE, 'streaks', data_leaderboardJson)
 
 if __name__ == '__main__':
     main()
