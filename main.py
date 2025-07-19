@@ -1,7 +1,9 @@
 # standard library
 from datetime import datetime as dt, timedelta, time as dt_time
+from dotenv import load_dotenv
 import heapq
 import logging
+import os
 import re
 import uuid
 
@@ -10,28 +12,53 @@ from zoneinfo import ZoneInfo
 
 # load project files
 from requests_utils import r_get, r_post
-from config import (
-    ENV_TOKEN,
-    ENV_GROUP_ID,
-    ENV_SUBGROUP_ID_CHECKINS,
-    ENV_SUBGROUP_ID_STREAKS,
-    ENV_STREAKS_FILENAME,
-    load_env_vars
-)
+
 
 # environment variables
+ENV_TOKEN = 'GROUPME_ACCESS_TOKEN'
+ENV_GROUP_ID = 'GROUPME_GROUP_ID'
+ENV_SUBGROUP_ID_CHECKINS_TAWG1 = 'GROUPME_SUBGROUP_ID_CHECKINS_TAWG1'
+ENV_SUBGROUP_ID_CHECKINS_TAWG2 = 'GROUPME_SUBGROUP_ID_CHECKINS_TAWG2'
+ENV_SUBGROUP_ID_STREAKS = 'GROUPME_SUBGROUP_ID_STREAKS'
+ENV_STREAKS_FILENAME = 'STREAKS_FILENAME'
+
+def load_env_vars():
+    """Load and validate required environment variables."""
+    load_dotenv()
+    keys = [
+        ENV_TOKEN,
+        ENV_GROUP_ID,
+        ENV_SUBGROUP_ID_CHECKINS_TAWG1,
+        ENV_SUBGROUP_ID_CHECKINS_TAWG2,
+        ENV_SUBGROUP_ID_STREAKS,
+        ENV_STREAKS_FILENAME
+    ]
+    env = {}
+    missing = []
+    for key in keys:
+        value = os.getenv(key)
+        if value is None:
+            missing.append(key)
+        env[key] = value
+    if missing:
+        raise EnvironmentError(f"Missing required environment variables: {', '.join(missing)}")
+    return env
+
 env = load_env_vars()
 TOKEN = env[ENV_TOKEN]
 GROUP_ID = env[ENV_GROUP_ID]
-SUBGROUP_ID_CHECKINS = env[ENV_SUBGROUP_ID_CHECKINS]
+SUBGROUP_ID_CHECKINS_TAWG1 = env[ENV_SUBGROUP_ID_CHECKINS_TAWG1]
+SUBGROUP_ID_CHECKINS_TAWG2 = env[ENV_SUBGROUP_ID_CHECKINS_TAWG2]
 SUBGROUP_ID_STREAKS = env[ENV_SUBGROUP_ID_STREAKS]
 STREAKS_FILENAME = env[ENV_STREAKS_FILENAME]
 
-URL_USERS = f'https://api.groupme.com/v3/groups/{GROUP_ID}?token={TOKEN}'
-URL_CHECKINS = f'https://api.groupme.com/v3/groups/{SUBGROUP_ID_CHECKINS}/messages?token={TOKEN}&acceptFiles=0&limit=20'
-URL_MESSAGE = f'https://api.groupme.com/v3/groups/{SUBGROUP_ID_STREAKS}/messages?token={TOKEN}'
 
 # constants
+URL_USERS = f'https://api.groupme.com/v3/groups/{GROUP_ID}?token={TOKEN}'
+URL_CHECKINS_TAWG1 = f'https://api.groupme.com/v3/groups/{SUBGROUP_ID_CHECKINS_TAWG1}/messages?token={TOKEN}&acceptFiles=0&limit=20' # hard limit == 100
+URL_CHECKINS_TAWG2 = f'https://api.groupme.com/v3/groups/{SUBGROUP_ID_CHECKINS_TAWG2}/messages?token={TOKEN}&acceptFiles=0&limit=20' # hard limit == 100
+URL_MESSAGE = f'https://api.groupme.com/v3/groups/{SUBGROUP_ID_STREAKS}/messages?token={TOKEN}'
+
 _TIMEZONE_EASTERN = ZoneInfo("America/New_York")
 _NOW = dt.now(_TIMEZONE_EASTERN)
 _YESTERDAY = _NOW.date() - timedelta(days=1)
@@ -40,8 +67,8 @@ START_OF_YESTERDAY = dt.combine(_YESTERDAY, dt_time.min, _TIMEZONE_EASTERN)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s:%(message)s')
 
 
-# Parse users from JSON and store them in a map of {user_id: nickname}
 def get_users(data, users_nicknames):
+    """Parse users from JSON and store them in a map of {user_id: nickname}"""
     members = data.get('response', {}).get('members', [])
 
     for member in members:
@@ -52,8 +79,8 @@ def get_users(data, users_nicknames):
     logging.info(f'Found {len(users_nicknames)} users: {users_nicknames}')
 
 
-# Parse checkins from JSON and store 1 (that the user read) in users_streakDiffs accordingly
 def get_checkins(data, users_streakDiffs):
+    """Parse checkins from JSON and store 1 (that the user read) in users_streakDiffs accordingly """
     messages = data.get('response', {}).get('messages', [])
     logging.info(f'Found {len(messages)} messages since {START_OF_YESTERDAY.date()}')
     messages = [msg for msg in messages if 'event' not in msg]
@@ -93,8 +120,8 @@ def get_checkins(data, users_streakDiffs):
         users_streakDiffs.clear()
         logging.info('No one read today')
 
-# Read content from a file and return the content as a list of strings
 def read_file():
+    """Read content from a file and return the content as a list of strings"""
     try:
         with open(STREAKS_FILENAME, 'r') as file:
             return file.readlines()
@@ -102,9 +129,8 @@ def read_file():
         return []
 
 
-# Given streaks from a file (in the format f'{streak} {user_id}\n'), update the streak map
 def update_streaks(file_content, users_streak_diffs):
-    # updates users_streakDiffs to be {user_id: streak, ...}
+    """Given streaks from a file (in the format f'{streak} {user_id}\n'), update the streak map"""
     for line in file_content:
         line = line.strip()
         streak, user_id = line.split()
@@ -116,11 +142,11 @@ def update_streaks(file_content, users_streak_diffs):
             streak += diff # streak increases/decreases in same direction
         else:
             streak = diff # streak switches to -1 or 1
-        users_streak_diffs[user_id] = streak
+        users_streak_diffs[user_id] = streak # updates users_streak_diffs to be {user_id: streak, ...}
 
 
-# Given a map of {user_id: streak} and {user_id: nickname}, return the TAWG message body as a list of strings
 def get_sorted_streaks(users_streak_diffs, users_nicknames):
+    """Given a map of {user_id: streak} and {user_id: nickname}, return the TAWG message body as a list of strings"""
     message_body = []
     streak_heap = []
     heapq.heapify(streak_heap)
@@ -136,8 +162,8 @@ def get_sorted_streaks(users_streak_diffs, users_nicknames):
     return message_body
 
 
-# Provided a map, write the streaks to files in the format of f'{streak} {user_id}'
 def write_streaks_to_file(users_streak_diffs):
+    """Provided a map, write the streaks to files in the format of f'{streak} {user_id}'"""
     fileContent = []
     for user_id, streak in users_streak_diffs.items():
         fileContent.append(f'{streak} {user_id}')
@@ -147,8 +173,8 @@ def write_streaks_to_file(users_streak_diffs):
     logging.info("Updated streaks file")
 
 
-# Return post request JSON body for the streak leaderboard
 def format_leaderboard_in_json(data_streaks_sorted):
+    """Return post request JSON body for the streak leaderboard"""
     header = f'TAWG Streaks for {START_OF_YESTERDAY.date()}:'
     messageContent = '\n'.join([header] + data_streaks_sorted)
     return {
@@ -169,9 +195,11 @@ def main():
     for user_id in users_nicknames.keys():
         users_streak_diffs[user_id] = -1 # by default, people don't read
 
-    # get checkins
-    data_checkins = r_get(URL_CHECKINS, 'checkins', {'since_id': dt.timestamp(START_OF_YESTERDAY)}) # gets most recent messages, max 100
-    get_checkins(data_checkins, users_streak_diffs)
+    # get checkins from both chats
+    data_checkins_tawg1 = r_get(URL_CHECKINS_TAWG1, 'checkins', {'since_id': dt.timestamp(START_OF_YESTERDAY)}) # gets most recent messages, hard max 100, soft limit 20
+    data_checkins_tawg2 = r_get(URL_CHECKINS_TAWG2, 'checkins', {'since_id': dt.timestamp(START_OF_YESTERDAY)}) # gets most recent messages, hard max 100, soft limit 20
+    get_checkins(data_checkins_tawg1, users_streak_diffs)
+    get_checkins(data_checkins_tawg2, users_streak_diffs)
 
     # read stored streaks data
     data_streaks = read_file()
