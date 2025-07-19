@@ -1,5 +1,7 @@
+streaks.txt
+/tests/examples
+
 .venv
 .env
 .vscode
-/tests/examples
 __pycache__
