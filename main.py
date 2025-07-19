@@ -7,7 +7,6 @@ import uuid
 
 # third-party libraries
 from zoneinfo import ZoneInfo
-from dotenv import load_dotenv
 
 # load project files
 from requests_utils import r_get, r_post
@@ -188,7 +187,7 @@ def main():
 
     # Post the streak leaderboard to the groupme chat
     data_leaderboard_json = format_leaderboard_in_json(data_streaks_sorted)
-    # r_post(URL_MESSAGE, 'streaks', data_leaderboardJson)
+    r_post(URL_MESSAGE, 'streaks', data_leaderboard_json)
 
 
 if __name__ == '__main__':
