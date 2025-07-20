@@ -1,5 +1,5 @@
-streaks.txt
-/tests/examples
+streaks.db
+/tests/examples/*
 
 .venv
 .env
