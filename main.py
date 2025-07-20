@@ -92,7 +92,7 @@ def get_checkins(data, users_streakDiffs):
         message = messages[i]
         try:
             text = message.get('text')
-            match = re.match(r'^(\d+)\)', text) # a number followed by )
+            match = re.match(r'^(\d+)\??\)', text) # a number followed by )
             if match:
                 checkin_number = int(match.group(1))
             else:
