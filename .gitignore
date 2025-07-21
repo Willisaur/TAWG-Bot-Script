@@ -1,7 +1,9 @@
-streaks.db
-/tests/examples/*
-
 .venv
 .env
 .vscode
+.DS_Store
+
 __pycache__
+streaks.db
+
+/tests/examples/*

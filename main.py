@@ -71,7 +71,7 @@ def get_users() -> tuple[dict[str, str], dict[str, int]]:
     data = r_get(URL_USERS, 'users')
 
     users_nicknames = dict()
-    users_streak_diffs = dict()
+    users_streak_variations = dict()
     members = data.get('response', {}).get('members', [])
 
     for member in members:
@@ -83,18 +83,18 @@ def get_users() -> tuple[dict[str, str], dict[str, int]]:
             continue
 
         users_nicknames[user_id] = name
-        users_streak_diffs[user_id] = -1 # by default, people don't read
+        users_streak_variations[user_id] = -1 # by default, people don't read
 
     if not len(users_nicknames):
         logging.critical('GET resulted in no users')
         exit(1)
     
     logging.info(f'Found {len(users_nicknames)} users: {users_nicknames}')
-    return users_nicknames, users_streak_diffs
+    return users_nicknames, users_streak_variations
 
 
-def get_checkins(url: str, chat_name: str, users_streak_diffs: dict[str, int]) -> None:
-    """Parse checkins from JSON and store `1` (that the user read) in `users_streak_diffs` accordingly"""
+def get_checkins(url: str, chat_name: str, users_streak_variations: dict[str, int]) -> None:
+    """Parse checkins from JSON and store `1` (that the user read) in `users_streak_variations` accordingly"""
     data = r_get(url, f'{chat_name} checkins', {'since_id': dt.timestamp(START_OF_YESTERDAY)})
 
     messages_unfiltered = data.get('response', {}).get('messages', [])
@@ -124,7 +124,7 @@ def get_checkins(url: str, chat_name: str, users_streak_diffs: dict[str, int]) -
             break
 
         user_id = message.get('user_id')
-        users_streak_diffs[user_id] = 1 # mark user has read today
+        users_streak_variations[user_id] = 1 # mark user has read today
         checkin_count += 1
 
         if checkin_number == 1: # reached first checkin of the day
@@ -147,53 +147,53 @@ def read_db(cursor: sqlite3.Cursor) -> list[tuple[str, int]]:
         exit(1)
 
 
-def update_streaks_map(cursor: sqlite3.Cursor, users_streak_diffs: dict[str, int]) -> None:
+def update_streaks_map(cursor: sqlite3.Cursor, users_streak_variations: dict[str, int]) -> None:
     """Query the database, and update the streak map"""
     data = read_db(cursor)
     
     for row in data:
         user_id, streak = row
-        diff = users_streak_diffs[user_id]
+        diff = users_streak_variations[user_id]
 
         # increment, decrement, or reset based on signs
         if streak ^ diff >= 0: # same sign
             streak += diff # streak increases/decreases in same direction
         else:
             streak = diff # streak switches to -1 or 1
-        users_streak_diffs[user_id] = streak # updates users_streak_diffs to be {user_id: streak, ...}
+        users_streak_variations[user_id] = streak # updates users_streak_variations to be {user_id: streak, ...}
 
 
-def get_sorted_streaks(users_nicknames: dict[str, str], users_streak_diffs: dict[str, int]) -> list[str]:
+def get_sorted_streaks(users_nicknames: dict[str, str], users_streak_variations: dict[str, int]) -> list[str]:
     """Given a map of `{user_id: streak}` and `{user_id: nickname}`, return a list of strings in the format of `{streak} {nickname}`, sorted by streak descending.
     """
     message_body = [
         f"{streak} {users_nicknames[user_id]}"
-        for user_id, streak in sorted(users_streak_diffs.items(), key=lambda x: x[1], reverse=True)
+        for user_id, streak in sorted(users_streak_variations.items(), key=lambda x: x[1], reverse=True)
     ]
     logging.info('Sorted streaks')
     return message_body
 
 
-def write_streaks_to_db(conn: sqlite3.Connection, cursor: sqlite3.Cursor, users_streak_diffs: dict):
+def write_streaks_to_db(conn: sqlite3.Connection, cursor: sqlite3.Cursor, users_streak_variations: dict):
     """Write the streaks to a database with columns `user_id` and `streak`"""
-    update_streaks_map(cursor, users_streak_diffs)
+    update_streaks_map(cursor, users_streak_variations)
 
     try:
-        for user_id, streak in users_streak_diffs.items():
+        for user_id, streak in users_streak_variations.items():
             cursor.execute('''
                 INSERT INTO streaks (user_id, streak) VALUES (?, ?)
                 ON CONFLICT(user_id) DO UPDATE SET streak=excluded.streak
             ''', (user_id, streak))
         conn.commit()
-        logging.info(f"Successfully wrote {len(users_streak_diffs)} streaks to the database")
+        logging.info(f"Successfully wrote {len(users_streak_variations)} streaks to the database")
     except Exception as e:
         logging.critical(f"Failed to write streaks to the database: {e}")
         exit(1)
 
 
-def post_leaderboard(users_nicknames: dict[str, str], users_streak_diffs: dict[str, int]) -> None:
+def post_leaderboard(users_nicknames: dict[str, str], users_streak_variations: dict[str, int]) -> None:
     """Send the streak leaderboard in the groupme chat"""
-    sorted_streaks = get_sorted_streaks(users_nicknames, users_streak_diffs)
+    sorted_streaks = get_sorted_streaks(users_nicknames, users_streak_variations)
 
     message = '\n'.join([LEADERBOARD_HEADER] + sorted_streaks)
     logging.info(f'Generated leaderboard')
@@ -213,14 +213,14 @@ def post_leaderboard(users_nicknames: dict[str, str], users_streak_diffs: dict[s
 def main():
     conn, cursor = database_connect()
 
-    users_nicknames, users_streak_diffs = get_users()
+    users_nicknames, users_streak_variations = get_users()
 
-    get_checkins(URL_TAWG1, 'TAWG 1', users_streak_diffs)
-    get_checkins(URL_TAWG2, 'TAWG 2', users_streak_diffs)
+    get_checkins(URL_TAWG1, 'TAWG 1', users_streak_variations)
+    get_checkins(URL_TAWG2, 'TAWG 2', users_streak_variations)
 
-    write_streaks_to_db(conn, cursor, users_streak_diffs)
+    write_streaks_to_db(conn, cursor, users_streak_variations)
 
-    post_leaderboard(users_nicknames, users_streak_diffs)
+    post_leaderboard(users_nicknames, users_streak_variations)
 
     conn.close()
 
