@@ -1,28 +1,29 @@
 # libraries
-from datetime import datetime
+from datetime import datetime as dt
 import json
 
 # project files
-from requests_utils import r_get, r_post
-from config import (
-    ENV_TOKEN,
-    ENV_GROUP_ID,
-    load_env_vars
+from requests_helpers import (
+    get_purpose,
+    r_get,
+    r_post
+)
+from constants import (
+    YESTERDAY,
+    URL_USERS,
+    URL_TAWG1,
+    URL_TAWG2
 )
 
-# environment variables
-env = load_env_vars()
-TOKEN = env[ENV_TOKEN]
-GROUP_ID = env[ENV_GROUP_ID]
 
-URL = f'https://api.groupme.com/v3/groups/{GROUP_ID}?token={TOKEN}'
-PURPOSE = 'users' # modify as needed
+# constants
+URL = URL_TAWG1
 
 
 def main():
-    response = r_get(URL, PURPOSE)
-    today_str = datetime.now().strftime('%m-%d-%y')
-    filename = f'tests/examples/{today_str}_{PURPOSE}.json'
+    response = r_get(URL)
+    today_str = dt.now().strftime('%m-%d-%y')
+    filename = f'tests/examples/{YESTERDAY}_{get_purpose(URL)}.json'
 
     if response is not None:
         with open(filename, 'w') as file:

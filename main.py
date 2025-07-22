@@ -1,58 +1,39 @@
 # standard library
-from datetime import datetime as dt, timedelta, time as dt_time
-from dotenv import load_dotenv
 import logging
-import os
 import re
-import sqlite3
+from sqlite3 import connect, Connection, Cursor
 from sys import exit
 import uuid
 
 # third-party libraries
-from zoneinfo import ZoneInfo
+from supabase import create_client, Client
 
-# load project files
-from requests_utils import r_get, r_post
-
-
-# environment variables
-def get_env_var(name: str) -> str:
-    value = os.getenv(name)
-    if value is None:
-        logging.critical(f'Missing required environment variable: {name}')
-        exit(1)
-    return value
-
-load_dotenv()
-
-GROUPME_ACCESS_TOKEN = get_env_var("GROUPME_ACCESS_TOKEN")
-GROUPME_GROUP_ID = get_env_var("GROUPME_GROUP_ID")
-GROUPME_SUBGROUP_ID_TAWG1 = get_env_var("GROUPME_SUBGROUP_ID_TAWG1")
-GROUPME_SUBGROUP_ID_TAWG2 = get_env_var("GROUPME_SUBGROUP_ID_TAWG2")
-GROUPME_SUBGROUP_ID_STREAKS = get_env_var("GROUPME_SUBGROUP_ID_STREAKS")
-ENVIRONMENT = get_env_var("ENVIRONMENT")
+# project files
+from requests_helpers import r_get, r_post
+from constants import (
+    ENVIRONMENT,
+    START_OF_YESTERDAY,
+    LEADERBOARD_HEADER,
+    URL_USERS,
+    URL_TAWG1,
+    URL_TAWG2,
+    URL_STREAKS,
+    SUPABASE_ENDPOINT,
+    SUPABASE_KEY
+)
 
 
-# constants
-URL_USERS = f'https://api.groupme.com/v3/groups/{GROUPME_GROUP_ID}?token={GROUPME_ACCESS_TOKEN}'
-URL_TAWG1 = f'https://api.groupme.com/v3/groups/{GROUPME_SUBGROUP_ID_TAWG1}/messages?token={GROUPME_ACCESS_TOKEN}&acceptFiles=0&limit=20' # API limit = 100 msgs, URI limit = 20 msgs
-URL_TAWG2 = f'https://api.groupme.com/v3/groups/{GROUPME_SUBGROUP_ID_TAWG2}/messages?token={GROUPME_ACCESS_TOKEN}&acceptFiles=0&limit=20' # API limit = 100 msgs, URI limit = 20 msgs
-URL_MESSAGE = f'https://api.groupme.com/v3/groups/{GROUPME_SUBGROUP_ID_STREAKS}/messages?token={GROUPME_ACCESS_TOKEN}'
+# config
+logging.basicConfig(level=logging.DEBUG if ENVIRONMENT == 'prod' else logging.DEBUG, format='%(asctime)s %(levelname)s:%(message)s')
 
 
-_TIMEZONE_EASTERN = ZoneInfo("America/New_York")
-_NOW = dt.now(_TIMEZONE_EASTERN)
-_YESTERDAY = _NOW.date() - timedelta(days=1)
-START_OF_YESTERDAY = dt.combine(_YESTERDAY, dt_time.min, _TIMEZONE_EASTERN)
-LEADERBOARD_HEADER = f'TAWG Streaks for {START_OF_YESTERDAY.date()}:'
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s:%(message)s')
-
-
-def database_connect() -> tuple[sqlite3.Connection, sqlite3.Cursor]:
+# helper methods
+def database_connect() -> tuple[Connection, Cursor]:
     """Connect to the sqlite database and create the streaks table if not found"""
     try:
-        conn = sqlite3.connect('streaks.db')
+        # Client = create_client(SUPABASE_ENDPOINT, SUPABASE_KEY)
+
+        conn = connect('streaks.db')
         cursor = conn.cursor()
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS streaks (
@@ -68,7 +49,7 @@ def database_connect() -> tuple[sqlite3.Connection, sqlite3.Cursor]:
 
 def get_users() -> tuple[dict[str, str], dict[str, int]]:
     """Parse users from response JSON and store them in a map of `{user_id: nickname}`. Also, create a default dict where each user hasn't read by default"""
-    data = r_get(URL_USERS, 'users')
+    data = r_get(URL_USERS)
 
     users_nicknames = dict()
     users_streak_variations = dict()
@@ -95,47 +76,49 @@ def get_users() -> tuple[dict[str, str], dict[str, int]]:
 
 def get_checkins(url: str, chat_name: str, users_streak_variations: dict[str, int]) -> None:
     """Parse checkins from JSON and store `1` (that the user read) in `users_streak_variations` accordingly"""
-    data = r_get(url, f'{chat_name} checkins', {'since_id': dt.timestamp(START_OF_YESTERDAY)})
+    data = r_get(url)
 
     messages_unfiltered = data.get('response', {}).get('messages', [])
     messages = [msg for msg in messages_unfiltered if 'event' not in msg]
-    logging.info(f'Found {len(messages_unfiltered)} messages in chat_name: {chat_name} since {START_OF_YESTERDAY.date()}')
-    logging.info(f'Found {len(messages)} non-events in chat_name: {chat_name} since {START_OF_YESTERDAY.date()}')
+    logging.info(f'Found {len(messages_unfiltered)} messages in {chat_name} since {START_OF_YESTERDAY}')
+    logging.info(f'Found {len(messages)} non-events in {chat_name} since {START_OF_YESTERDAY}')
 
-    last_checkin_number = len(messages)
-    checkin_count = 0
+    last_checkin_number = 0
 
     for i in range(len(messages)):
         message = messages[i]
         try:
             text = message.get('text')
-            match = re.match(r'^(\d+)\??\)', text) # a number followed by a possible ? and mandatory )
+            match = re.match(r'^(\d+)\??[)\.]', text)  # a number followed by a possible ? and mandatory ) or .
             if match:
                 checkin_number = int(match.group(1))
+                logging.debug(f'Checkin found. i: {i}, text: {text}')
             else:
-                logging.warning(f'Most recent message i: {i} from chat_name:{chat_name} not prefixed with "#)"')
+                logging.warning(f'Message i: {i} from {chat_name} not prefixed with "#)"')
                 continue
         except Exception:
             logging.error(f'Unable to parse text from message: {message}')
             continue
 
-        if checkin_number > last_checkin_number: # checkin prefix not descending
-            logging.warning(f'Stopped parsing at out-of-order checkin message i: {i}')
+        if checkin_number > last_checkin_number + 1:
+            logging.warning(f'Checkin number > expected. Ignoring checkin')
+            continue
+        elif checkin_number < last_checkin_number + 1:
+            logging.warning(f'Checkin number < previous. Stopping further parsing.')
             break
+        
 
         user_id = message.get('user_id')
         users_streak_variations[user_id] = 1 # mark user has read today
-        checkin_count += 1
+        last_checkin_number += 1
 
-        if checkin_number == 1: # reached first checkin of the day
-            logging.info(f'Logged {checkin_count} checkins from messages')
-            break
-
-    if checkin_count == 0:
+    if last_checkin_number == 0:
         logging.info('No one read today')
+    else:
+        logging.info(f'Logged {last_checkin_number} checkins from messages')
 
 
-def read_db(cursor: sqlite3.Cursor) -> list[tuple[str, int]]:
+def read_db(cursor: Cursor) -> list[tuple[str, int]]:
     """Read the streaks from the sqlite database -- returns `[(user_id, streak)]`"""
     try:
         cursor.execute('SELECT * FROM streaks')
@@ -147,7 +130,7 @@ def read_db(cursor: sqlite3.Cursor) -> list[tuple[str, int]]:
         exit(1)
 
 
-def update_streaks_map(cursor: sqlite3.Cursor, users_streak_variations: dict[str, int]) -> None:
+def update_streaks_map(cursor: Cursor, users_streak_variations: dict[str, int]) -> None:
     """Query the database, and update the streak map"""
     data = read_db(cursor)
     
@@ -174,7 +157,7 @@ def get_sorted_streaks(users_nicknames: dict[str, str], users_streak_variations:
     return message_body
 
 
-def write_streaks_to_db(conn: sqlite3.Connection, cursor: sqlite3.Cursor, users_streak_variations: dict):
+def write_streaks_to_db(conn: Connection, cursor: Cursor, users_streak_variations: dict):
     """Write the streaks to a database with columns `user_id` and `streak`"""
     update_streaks_map(cursor, users_streak_variations)
 
@@ -206,7 +189,7 @@ def post_leaderboard(users_nicknames: dict[str, str], users_streak_variations: d
         }}
     
     if ENVIRONMENT == 'prod':
-        r_post(URL_MESSAGE, 'streaks leaderboard', data)
+        r_post(URL_STREAKS, data)
     logging.info('Program succeeded')
 
 
