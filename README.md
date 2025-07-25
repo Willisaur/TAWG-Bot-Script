@@ -6,7 +6,7 @@
 
 - **Daily Streak Tracking:** Monitors check-in messages to determine which users have read each day.
 - **Leaderboard Posting:** Automatically posts a formatted leaderboard of current streaks to a GroupMe group.
-- **Persistent Streak Storage:** Accesses a local SQLite database for persistence across runs.
+- **Persistent Streak Storage:** Uses a Supabase-hosted Postgres database for persistence across runs.
 
 ## How It Works
 
@@ -14,11 +14,12 @@
 2. **Data Collection:** The script fetches recent messages from these chats and parses check-ins.
 3. **Streak Calculation:** Streaks are updated based on whether users checked in for the day.
 4. **Leaderboard Generation:** A sorted leaderboard is created and posted to a GroupMe group.
-5. **Persistence:** Streaks are saved to an SQLite database for future runs.
+5. **Persistence:** Streaks are saved to a Supabase Postgres database for future runs.
 
 ## File Structure
 
 - `main.py` - Main logic for fetching check-ins, updating streaks, and posting the leaderboard.
+- `constants.py` - Stores configuration values and environment variables used throughout the project.
 - `requests_utils.py` - Utility functions for making HTTP requests.
 - `dump.py` - Utility for dumping user data from GroupMe for testing.
 - `tests/` - Unit tests and example data.
