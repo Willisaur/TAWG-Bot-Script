@@ -158,7 +158,7 @@ def get_sorted_streaks(users_nicknames: dict[str, str], users_streak_variations:
     """Given a map of `{user_id: streak}` and `{user_id: nickname}`, return a list of strings in the format of `{streak} {nickname}`, sorted by streak descending.
     """
     message_body = [
-        f"{streak} {users_nicknames[user_id]}"
+        f"{streak} - {users_nicknames[user_id]}"
         for user_id, streak in sorted(users_streak_variations.items(), key=lambda x: x[1], reverse=True)
     ]
     logging.info('Sorted streaks')
