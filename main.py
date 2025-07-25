@@ -24,14 +24,29 @@ from constants import (
 
 
 # config
-logging.basicConfig(level=logging.DEBUG if ENVIRONMENT == 'prod' else logging.DEBUG, format='%(asctime)s %(levelname)s:%(message)s')
+def set_logging_debug():
+    if ENVIRONMENT != 'prod':
+        logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s:%(message)s')
+    else:
+        set_logging_info()
+
+
+def set_logging_info():
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s:%(message)s')
+
+
+set_logging_debug()
 
 
 # helper methods
 def database_connect() -> Client:
     """Connect to the Supabase Postgres database"""
     try:
-        return create_client(SUPABASE_ENDPOINT, SUPABASE_KEY)
+        set_logging_info()
+        Client = create_client(SUPABASE_ENDPOINT, SUPABASE_KEY)
+        set_logging_debug()
+
+        return Client
     except Exception as e:
         logging.critical(f"Failed to connect to the database: {e}")
         exit(1)
@@ -108,10 +123,13 @@ def get_checkins(url: str, chat_name: str, users_streak_variations: dict[str, in
         logging.info(f'Logged {last_checkin_number} checkins from messages')
 
 
-def read_db(supabase: Client) -> list[dict[str, Any]]:
+def read_database(supabase: Client) -> list[dict[str, Any]]:
     """Read the streaks from the supabase postgres database -- returns `[(user_id, streak)]`"""
     try:
+        set_logging_info()
         response = supabase.table('streaks').select('user_id, streak').execute()
+        set_logging_debug()
+        
         logging.info(f"Successfully fetched {len(response.data)} rows from streaks table")
         return response.data
     except Exception as e:
@@ -121,7 +139,7 @@ def read_db(supabase: Client) -> list[dict[str, Any]]:
 
 def update_streaks_map(supabase: Client, users_streak_variations: dict[str, int]) -> None:
     """Query the database, and update the streak map"""
-    data = read_db(supabase)
+    data = read_database(supabase)
     
     for row in data:
         user_id = row['user_id']
@@ -147,21 +165,23 @@ def get_sorted_streaks(users_nicknames: dict[str, str], users_streak_variations:
     return message_body
 
 
-def write_streaks_to_db(supabase: Client, users_streak_variations: dict[str, int]):
+def write_streaks_to_database(supabase: Client, users_streak_variations: dict[str, int]):
     """Write the streaks to a database with columns `user_id` and `streak`"""
     update_streaks_map(supabase, users_streak_variations)
 
-    if ENVIRONMENT == 'prod':
-        try:
-            for user_id, streak in users_streak_variations.items():
-                supabase.table('streaks').upsert({
-                    'user_id': user_id,
-                    'streak': streak
-                })
-            logging.info(f"Successfully wrote {len(users_streak_variations)} streaks to the database")
-        except Exception as e:
-            logging.critical(f"Failed to write streaks to the database: {e}")
-            exit(1)
+    try:
+        set_logging_info()
+        for user_id, streak in users_streak_variations.items():
+            supabase.table('streaks').upsert({
+                'user_id': user_id,
+                'streak': streak
+            })
+        set_logging_debug()
+
+        logging.info(f"Successfully wrote {len(users_streak_variations)} streaks to the database")
+    except Exception as e:
+        logging.critical(f"Failed to write streaks to the database: {e}")
+        exit(1)
 
 
 def post_leaderboard(users_nicknames: dict[str, str], users_streak_variations: dict[str, int]) -> None:
@@ -184,14 +204,14 @@ def post_leaderboard(users_nicknames: dict[str, str], users_streak_variations: d
 
 
 def main():
-    supabase = database_connect()
-
     users_nicknames, users_streak_variations = get_users()
 
     get_checkins(URL_TAWG1, 'TAWG 1', users_streak_variations)
     get_checkins(URL_TAWG2, 'TAWG 2', users_streak_variations)
 
-    write_streaks_to_db(supabase, users_streak_variations)
+    if ENVIRONMENT == 'prod':
+        supabase = database_connect()
+        write_streaks_to_database(supabase, users_streak_variations)
 
     post_leaderboard(users_nicknames, users_streak_variations)
 
