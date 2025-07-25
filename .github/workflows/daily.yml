@@ -25,5 +25,7 @@ jobs:
           GROUPME_SUBGROUP_ID_TAWG1: ${{ secrets.GROUPME_SUBGROUP_ID_TAWG1 }}
           GROUPME_SUBGROUP_ID_TAWG2: ${{ secrets.GROUPME_SUBGROUP_ID_TAWG2 }}
           GROUPME_SUBGROUP_ID_STREAKS: ${{ secrets.GROUPME_SUBGROUP_ID_STREAKS }}
+          SUPABASE_ENDPOINT: ${{ secrets.SUPABASE_ENDPOINT }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           ENVIRONMENT: ${{ vars.ENVIRONMENT }}
         run: python main.py
