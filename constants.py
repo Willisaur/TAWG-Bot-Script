@@ -45,7 +45,7 @@ _TIMEZONE_EASTERN = ZoneInfo("America/New_York")
 _NOW = dt.now(_TIMEZONE_EASTERN)
 _NANOSECONDS_MULTIPLIER = 100_000_000
 
-YESTERDAY = _NOW.date() - timedelta(days=2)
+YESTERDAY = _NOW.date() - timedelta(days=1)
 START_OF_YESTERDAY_TIMESTAMP = int(dt.timestamp(dt.combine(YESTERDAY, dt_time.min, _TIMEZONE_EASTERN))) * _NANOSECONDS_MULTIPLIER
 START_OF_YESTERDAY = dt.fromtimestamp(START_OF_YESTERDAY_TIMESTAMP / _NANOSECONDS_MULTIPLIER).date()
 

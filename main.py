@@ -1,8 +1,8 @@
 # standard library
 import logging
 import re
-from sqlite3 import connect, Connection, Cursor
 from sys import exit
+from typing import Any
 import uuid
 
 # third-party libraries
@@ -28,20 +28,10 @@ logging.basicConfig(level=logging.DEBUG if ENVIRONMENT == 'prod' else logging.DE
 
 
 # helper methods
-def database_connect() -> tuple[Connection, Cursor]:
-    """Connect to the sqlite database and create the streaks table if not found"""
+def database_connect() -> Client:
+    """Connect to the Supabase Postgres database"""
     try:
-        # Client = create_client(SUPABASE_ENDPOINT, SUPABASE_KEY)
-
-        conn = connect('streaks.db')
-        cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS streaks (
-                user_id TEXT PRIMARY KEY,
-                streak INTEGER
-            )
-        ''')
-        return conn, cursor
+        return create_client(SUPABASE_ENDPOINT, SUPABASE_KEY)
     except Exception as e:
         logging.critical(f"Failed to connect to the database: {e}")
         exit(1)
@@ -118,24 +108,24 @@ def get_checkins(url: str, chat_name: str, users_streak_variations: dict[str, in
         logging.info(f'Logged {last_checkin_number} checkins from messages')
 
 
-def read_db(cursor: Cursor) -> list[tuple[str, int]]:
-    """Read the streaks from the sqlite database -- returns `[(user_id, streak)]`"""
+def read_db(supabase: Client) -> list[dict[str, Any]]:
+    """Read the streaks from the supabase postgres database -- returns `[(user_id, streak)]`"""
     try:
-        cursor.execute('SELECT * FROM streaks')
-        rows = cursor.fetchall()
-        logging.info(f"Successfully fetched {len(rows)} rows from streaks table")
-        return rows
+        response = supabase.table('streaks').select('user_id, streak').execute()
+        logging.info(f"Successfully fetched {len(response.data)} rows from streaks table")
+        return response.data
     except Exception as e:
         logging.critical(f"Failed to fetch from database: {e}")
         exit(1)
 
 
-def update_streaks_map(cursor: Cursor, users_streak_variations: dict[str, int]) -> None:
+def update_streaks_map(supabase: Client, users_streak_variations: dict[str, int]) -> None:
     """Query the database, and update the streak map"""
-    data = read_db(cursor)
+    data = read_db(supabase)
     
     for row in data:
-        user_id, streak = row
+        user_id = row['user_id']
+        streak = row['streak']
         diff = users_streak_variations[user_id]
 
         # increment, decrement, or reset based on signs
@@ -157,21 +147,21 @@ def get_sorted_streaks(users_nicknames: dict[str, str], users_streak_variations:
     return message_body
 
 
-def write_streaks_to_db(conn: Connection, cursor: Cursor, users_streak_variations: dict):
+def write_streaks_to_db(supabase: Client, users_streak_variations: dict[str, int]):
     """Write the streaks to a database with columns `user_id` and `streak`"""
-    update_streaks_map(cursor, users_streak_variations)
+    update_streaks_map(supabase, users_streak_variations)
 
-    try:
-        for user_id, streak in users_streak_variations.items():
-            cursor.execute('''
-                INSERT INTO streaks (user_id, streak) VALUES (?, ?)
-                ON CONFLICT(user_id) DO UPDATE SET streak=excluded.streak
-            ''', (user_id, streak))
-        conn.commit()
-        logging.info(f"Successfully wrote {len(users_streak_variations)} streaks to the database")
-    except Exception as e:
-        logging.critical(f"Failed to write streaks to the database: {e}")
-        exit(1)
+    if ENVIRONMENT == 'prod':
+        try:
+            for user_id, streak in users_streak_variations.items():
+                supabase.table('streaks').upsert({
+                    'user_id': user_id,
+                    'streak': streak
+                })
+            logging.info(f"Successfully wrote {len(users_streak_variations)} streaks to the database")
+        except Exception as e:
+            logging.critical(f"Failed to write streaks to the database: {e}")
+            exit(1)
 
 
 def post_leaderboard(users_nicknames: dict[str, str], users_streak_variations: dict[str, int]) -> None:
@@ -194,18 +184,16 @@ def post_leaderboard(users_nicknames: dict[str, str], users_streak_variations: d
 
 
 def main():
-    conn, cursor = database_connect()
+    supabase = database_connect()
 
     users_nicknames, users_streak_variations = get_users()
 
     get_checkins(URL_TAWG1, 'TAWG 1', users_streak_variations)
     get_checkins(URL_TAWG2, 'TAWG 2', users_streak_variations)
 
-    write_streaks_to_db(conn, cursor, users_streak_variations)
+    write_streaks_to_db(supabase, users_streak_variations)
 
     post_leaderboard(users_nicknames, users_streak_variations)
-
-    conn.close()
 
 
 if __name__ == '__main__':
