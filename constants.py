@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 def add_query_parameters(token: str, limit: int = 100, accept_files: bool = False) -> str:
     params : dict[str, int | str] = {
         'token': token,
-        'after_id': START_OF_YESTERDAY_TIMESTAMP,
+        'after_id': SCAN_YESTERDAY_TIMESTAMP,
         'limit': limit,
         'acceptFiles': int(accept_files)
     }
@@ -46,10 +46,10 @@ _NOW = dt.now(_TIMEZONE_EASTERN)
 _NANOSECONDS_MULTIPLIER = 100_000_000
 
 YESTERDAY = _NOW.date() - timedelta(days=1)
-START_OF_YESTERDAY_TIMESTAMP = int(dt.timestamp(dt.combine(YESTERDAY, dt_time.min, _TIMEZONE_EASTERN))) * _NANOSECONDS_MULTIPLIER
-START_OF_YESTERDAY = dt.fromtimestamp(START_OF_YESTERDAY_TIMESTAMP / _NANOSECONDS_MULTIPLIER).date()
+SCAN_YESTERDAY_TIMESTAMP = int(dt.timestamp(dt.combine(YESTERDAY, dt_time(5), _TIMEZONE_EASTERN))) * _NANOSECONDS_MULTIPLIER # 5am ET previous day
+YESTERDAY = dt.fromtimestamp(SCAN_YESTERDAY_TIMESTAMP / _NANOSECONDS_MULTIPLIER).date().strftime('%B %d, %Y')
 
-LEADERBOARD_HEADER = f'TAWG Streaks for {START_OF_YESTERDAY}:'
+LEADERBOARD_HEADER = f'TAWG Streaks for {YESTERDAY}:'
 
 BASE_URL = f'https://api.groupme.com/v3/groups'
 

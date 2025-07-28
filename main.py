@@ -12,7 +12,7 @@ from supabase import create_client, Client
 from requests_helpers import r_get, r_post
 from constants import (
     ENVIRONMENT,
-    START_OF_YESTERDAY,
+    YESTERDAY,
     LEADERBOARD_HEADER,
     URL_USERS,
     URL_TAWG1,
@@ -85,8 +85,8 @@ def get_checkins(url: str, chat_name: str, users_streak_variations: dict[str, in
 
     messages_unfiltered = data.get('response', {}).get('messages', [])
     messages = [msg for msg in messages_unfiltered if 'event' not in msg]
-    logging.info(f'Found {len(messages_unfiltered)} messages in {chat_name} since {START_OF_YESTERDAY}')
-    logging.info(f'Found {len(messages)} non-events in {chat_name} since {START_OF_YESTERDAY}')
+    logging.info(f'Found {len(messages_unfiltered)} messages in {chat_name} since {YESTERDAY}')
+    logging.info(f'Found {len(messages)} non-events in {chat_name} since {YESTERDAY}')
 
     last_checkin_number = 0
 
@@ -99,18 +99,19 @@ def get_checkins(url: str, chat_name: str, users_streak_variations: dict[str, in
                 checkin_number = int(match.group(1))
                 logging.debug(f'Checkin found. i: {i}, text: {text}')
             else:
-                logging.warning(f'Message i: {i} from {chat_name} not prefixed with "#)"')
+                logging.warning(f'Skipping message i: {i} from {chat_name} not prefixed with "#)"')
                 continue
         except Exception:
             logging.error(f'Unable to parse text from message: {message}')
             continue
 
-        if checkin_number > last_checkin_number + 1:
-            logging.warning(f'Checkin number > expected. Ignoring checkin')
-            continue
-        elif checkin_number < last_checkin_number + 1:
-            logging.warning(f'Checkin number < previous. Stopping further parsing.')
-            break
+        if checkin_number != last_checkin_number + 1:
+            if checkin_number > last_checkin_number:
+                logging.warning(f'Checkin number > expected. Ignoring checkin')
+                continue
+            else:
+                logging.warning(f'Checkin number <= previous. Stopping further parsing.')
+                break
         
 
         user_id = message.get('user_id')
@@ -155,11 +156,13 @@ def update_streaks_map(supabase: Client, users_streak_variations: dict[str, int]
 
 
 def get_sorted_streaks(users_nicknames: dict[str, str], users_streak_variations: dict[str, int]) -> list[str]:
-    """Given a map of `{user_id: streak}` and `{user_id: nickname}`, return a list of strings in the format of `{streak} {nickname}`, sorted by streak descending.
-    """
+    """Given a map of `{user_id: streak}` and `{user_id: nickname}`, return a list of strings in the format of `{streak} {nickname}`, sorted by streak descending, then nickname ascending."""
     message_body = [
         f"{streak} - {users_nicknames[user_id]}"
-        for user_id, streak in sorted(users_streak_variations.items(), key=lambda x: x[1], reverse=True)
+        for user_id, streak in sorted(
+            users_streak_variations.items(),
+            key=lambda x: (-x[1], users_nicknames[x[0]].lower())
+        )
     ]
     logging.info('Sorted streaks')
     return message_body
