@@ -2,7 +2,7 @@ name: Run TAWG Bot Script Daily
 
 on:
   schedule:
-    - cron: '30 12 * * *' # 7:30am EST or 8:30pm EDT
+    - cron: '30 12 * * *' # 7:30am EST or 8:30am EDT
   workflow_dispatch:
 
 jobs:
