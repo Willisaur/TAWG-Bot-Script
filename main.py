@@ -172,19 +172,20 @@ def write_streaks_to_database(supabase: Client, users_streak_variations: dict[st
     """Write the streaks to a database with columns `user_id` and `streak`"""
     update_streaks_map(supabase, users_streak_variations)
 
-    try:
-        set_logging_info()
-        for user_id, streak in users_streak_variations.items():
-            supabase.table('streaks').upsert({
-                'user_id': user_id,
-                'streak': streak
-            }).execute()
-        set_logging_debug()
+    if ENVIRONMENT == 'prod':
+        try:
+            set_logging_info()
+            for user_id, streak in users_streak_variations.items():
+                supabase.table('streaks').upsert({
+                    'user_id': user_id,
+                    'streak': streak
+                }).execute()
+            set_logging_debug()
 
-        logging.info(f"Successfully wrote {len(users_streak_variations)} streaks to the database")
-    except Exception as e:
-        logging.critical(f"Failed to write streaks to the database: {e}")
-        exit(1)
+            logging.info(f"Successfully wrote {len(users_streak_variations)} streaks to the database")
+        except Exception as e:
+            logging.critical(f"Failed to write streaks to the database: {e}")
+            exit(1)
 
 
 def post_leaderboard(users_nicknames: dict[str, str], users_streak_variations: dict[str, int]) -> None:
@@ -212,9 +213,8 @@ def main():
     get_checkins(URL_TAWG1, 'TAWG 1', users_streak_variations)
     get_checkins(URL_TAWG2, 'TAWG 2', users_streak_variations)
 
-    if ENVIRONMENT == 'prod':
-        supabase = database_connect()
-        write_streaks_to_database(supabase, users_streak_variations)
+    supabase = database_connect()
+    write_streaks_to_database(supabase, users_streak_variations)
 
     post_leaderboard(users_nicknames, users_streak_variations)
 
