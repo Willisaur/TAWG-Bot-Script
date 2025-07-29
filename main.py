@@ -178,7 +178,7 @@ def write_streaks_to_database(supabase: Client, users_streak_variations: dict[st
             supabase.table('streaks').upsert({
                 'user_id': user_id,
                 'streak': streak
-            })
+            }).execute()
         set_logging_debug()
 
         logging.info(f"Successfully wrote {len(users_streak_variations)} streaks to the database")
