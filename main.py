@@ -168,7 +168,7 @@ def get_sorted_streaks(users_nicknames: dict[str, str], users_streak_variations:
     return message_body
 
 
-def write_streaks_to_database(supabase: Client, users_streak_variations: dict[str, int]):
+def write_streaks_to_database(supabase: Client, users_nicknames: dict[str, str], users_streak_variations: dict[str, int]):
     """Write the streaks to a database with columns `user_id` and `streak`"""
     update_streaks_map(supabase, users_streak_variations)
 
@@ -178,7 +178,9 @@ def write_streaks_to_database(supabase: Client, users_streak_variations: dict[st
             for user_id, streak in users_streak_variations.items():
                 supabase.table('streaks').upsert({
                     'user_id': user_id,
-                    'streak': streak
+                    'streak': streak,
+                    # 'last_streak': 0,
+                    'username': users_nicknames[user_id]
                 }).execute()
             set_logging_debug()
 
@@ -214,7 +216,7 @@ def main():
     get_checkins(URL_TAWG2, 'TAWG 2', users_streak_variations)
 
     supabase = database_connect()
-    write_streaks_to_database(supabase, users_streak_variations)
+    write_streaks_to_database(supabase, users_nicknames, users_streak_variations)
 
     post_leaderboard(users_nicknames, users_streak_variations)
 
