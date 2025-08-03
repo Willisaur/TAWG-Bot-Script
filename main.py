@@ -176,12 +176,15 @@ def write_streaks_to_database(supabase: Client, users_nicknames: dict[str, str],
         try:
             set_logging_info()
             for user_id, streak in users_streak_variations.items():
-                supabase.table('streaks').upsert({
+                query_body = {
                     'user_id': user_id,
                     'streak': streak,
-                    # 'last_streak': 0,
-                    'username': users_nicknames[user_id]
-                }).execute()
+                    # 'last_streak': 0
+                }
+                if username := users_nicknames.get(user_id):
+                    query_body['username'] = username
+                
+                supabase.table('streaks').upsert(query_body).execute()
             set_logging_debug()
 
             logging.info(f"Successfully wrote {len(users_streak_variations)} streaks to the database")
