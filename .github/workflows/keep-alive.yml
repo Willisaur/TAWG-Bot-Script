@@ -1,0 +1,27 @@
+name: Keep Workflows Alive
+
+on:
+  schedule:
+    - cron: '0 0 1 */1 *' # Runs every 30 days at midnight UTC
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "actions-bot"
+          git config --global user.email "actions-bot@example.com"
+
+      - name: Create dummy commit
+        run: |
+          git commit --allow-empty -m "Keep workflows alive"
+
+      - name: Push changes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git push
