@@ -145,8 +145,13 @@ def update_streaks_map(supabase: Client, users_streak_variations: dict[str, int]
     for row in data:
         user_id = row['user_id']
         streak = row['streak']
-        diff = users_streak_variations[user_id]
-
+        diff = None
+        try:
+            diff = users_streak_variations[user_id]
+        except Exception as e:
+            logging.info(f'Error when updating streak map for a user. This user may have left the GroupMe. user_id: {user_id}')
+            continue
+        
         # increment, decrement, or reset based on signs
         if streak ^ diff >= 0: # same sign
             streak += diff # streak increases/decreases in same direction
